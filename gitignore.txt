@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+venv/
+env/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Excel / data files (keep off GitHub)
+*.xlsx
+*.xls
+*.csv
+
+# OS
+.DS_Store
+Thumbs.db
