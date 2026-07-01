@@ -1,0 +1,21 @@
+@echo off
+cd /d "C:\Users\ax09\OneDrive - CDC\ISD project dashbaord\Publication dash"
+
+echo Creating requirements.txt...
+(
+echo pandas>=2.0.0
+echo openpyxl>=3.1.0
+echo gitpython>=3.1.0
+) > requirements.txt
+
+echo Installing dependencies...
+pip install pandas openpyxl gitpython
+
+echo Creating placeholder data.json...
+(
+echo {"last_updated":"","total":0,"records":[]}
+) > data.json
+
+echo.
+echo Done! Now run:  python sync_to_github.py
+pause
