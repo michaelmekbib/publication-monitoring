@@ -1,90 +1,101 @@
-@echo off
-title ISD Publications Dashboard — Setup
-color 1F
-cd /d "C:\Users\ax09\OneDrive - CDC\ISD project dashbaord\Publication dash"
+# ISD Publications Dashboard — Setup Script (PowerShell)
+# Run this in PowerShell as Administrator:
+# Right-click PowerShell → "Run as Administrator" → paste this command:
+# powershell -ExecutionPolicy Bypass -File "C:\Users\ax09\OneDrive - CDC\ISD project dashbaord\Publication dash\setup.ps1"
 
-echo ============================================================
-echo   ISD Publications Dashboard — One-click Setup
-echo ============================================================
-echo.
+$ProjectDir = "C:\Users\ax09\OneDrive - CDC\ISD project dashbaord\Publication dash"
+$ExcelFile  = "$ProjectDir\ISD Publications tracking_format updated 3-17-2025.xlsx"
+$GitHubRepo = "https://github.com/michaelmekbib/isd-publications-dashboard.git"  # <-- update this
 
-:: ── STEP 1: Create requirements.txt ─────────────────────────────────────────
-echo [1/6] Creating requirements.txt...
-(
-echo pandas^>=2.0.0
-echo openpyxl^>=3.1.0
-echo gitpython^>=3.1.0
-) > requirements.txt
-echo       Done.
-echo.
+Write-Host ""
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "  ISD Publications Dashboard - Setup" -ForegroundColor Cyan
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host ""
 
-:: ── STEP 2: Install Python packages ─────────────────────────────────────────
-echo [2/6] Installing Python packages...
+# ── Go to project folder ──────────────────────────────────────────────────────
+Set-Location $ProjectDir
+Write-Host "[1/7] Working directory: $ProjectDir" -ForegroundColor Yellow
+
+# ── Create requirements.txt ───────────────────────────────────────────────────
+Write-Host "[2/7] Creating requirements.txt..." -ForegroundColor Yellow
+@"
+pandas>=2.0.0
+openpyxl>=3.1.0
+gitpython>=3.1.0
+"@ | Out-File -FilePath "requirements.txt" -Encoding utf8
+Write-Host "      Done." -ForegroundColor Green
+
+# ── Install Python packages ───────────────────────────────────────────────────
+Write-Host "[3/7] Installing Python packages..." -ForegroundColor Yellow
 pip install pandas openpyxl gitpython --quiet
-if %errorlevel% neq 0 (
-    echo       ERROR: pip install failed. Make sure Python is installed.
-    pause & exit /b 1
-)
-echo       Done.
-echo.
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "      ERROR: pip failed. Make sure Python is installed and 'Add to PATH' was checked." -ForegroundColor Red
+    Write-Host "      Download Python: https://www.python.org/downloads/" -ForegroundColor Red
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+Write-Host "      Done." -ForegroundColor Green
 
-:: ── STEP 3: Create placeholder data.json ────────────────────────────────────
-echo [3/6] Creating placeholder data.json...
-echo {"last_updated":"","total":0,"records":[]} > data.json
-echo       Done.
-echo.
+# ── Create placeholder data.json ─────────────────────────────────────────────
+Write-Host "[4/7] Creating placeholder data.json..." -ForegroundColor Yellow
+'{"last_updated":"","total":0,"records":[]}' | Out-File -FilePath "data.json" -Encoding utf8
+Write-Host "      Done." -ForegroundColor Green
 
-:: ── STEP 4: Run sync script to populate data.json ───────────────────────────
-echo [4/6] Running sync script (reads Excel, builds data.json)...
-python sync_to_github.py
-if %errorlevel% neq 0 (
-    echo       ERROR: sync script failed. Check EXCEL_PATH in sync_to_github.py.
-    pause & exit /b 1
-)
-echo       Done.
-echo.
+# ── Run sync script ───────────────────────────────────────────────────────────
+Write-Host "[5/7] Running sync script (reads Excel, builds data.json)..." -ForegroundColor Yellow
+if (-Not (Test-Path $ExcelFile)) {
+    Write-Host "      WARNING: Excel file not found at:" -ForegroundColor DarkYellow
+    Write-Host "      $ExcelFile" -ForegroundColor DarkYellow
+    Write-Host "      Skipping sync — run sync_to_github.py manually once file path is correct." -ForegroundColor DarkYellow
+} else {
+    python sync_to_github.py
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "      ERROR: sync script failed. Check EXCEL_PATH in sync_to_github.py." -ForegroundColor Red
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
+    Write-Host "      Done." -ForegroundColor Green
+}
 
-:: ── STEP 5: Commit everything to git ────────────────────────────────────────
-echo [5/6] Committing files to git...
-git add index.html requirements.txt data.json sync_to_github.py README.md .gitignore
-git commit -m "Auto-setup: add sync script and data files"
-if %errorlevel% neq 0 (
-    echo       Nothing new to commit, or git error — continuing.
-)
-echo       Done.
-echo.
+# ── Initialize git if needed ──────────────────────────────────────────────────
+Write-Host "[6/7] Setting up git..." -ForegroundColor Yellow
+if (-Not (Test-Path ".git")) {
+    git init
+    git remote add origin $GitHubRepo
+    Write-Host "      Git initialized." -ForegroundColor Green
+} else {
+    Write-Host "      Git already initialized." -ForegroundColor Green
+}
+git add index.html requirements.txt data.json sync_to_github.py README.md .gitignore 2>$null
+git commit -m "Auto-setup: ISD Publications Dashboard"
+git branch -M main
+git push -u origin main
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "      ERROR: git push failed. Check your GitHub repo URL above." -ForegroundColor Red
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+Write-Host "      Pushed to GitHub." -ForegroundColor Green
 
-:: ── STEP 6: Push to GitHub ──────────────────────────────────────────────────
-echo [6/6] Pushing to GitHub...
-git push
-if %errorlevel% neq 0 (
-    echo       ERROR: git push failed. Check your GitHub remote is set up.
-    pause & exit /b 1
-)
-echo       Done.
-echo.
+# ── Schedule daily sync ───────────────────────────────────────────────────────
+Write-Host "[7/7] Scheduling daily sync at 8:00 AM..." -ForegroundColor Yellow
+$action  = New-ScheduledTaskAction -Execute "python" -Argument "`"$ProjectDir\sync_to_github.py`""
+$trigger = New-ScheduledTaskTrigger -Daily -At "08:00AM"
+Register-ScheduledTask -TaskName "ISD Dashboard Daily Sync" -Action $action -Trigger $trigger -Force | Out-Null
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "      Daily sync scheduled for 8:00 AM." -ForegroundColor Green
+} else {
+    Write-Host "      Could not schedule task — run PowerShell as Administrator to retry." -ForegroundColor DarkYellow
+}
 
-:: ── STEP 7: Schedule daily Task Scheduler job ───────────────────────────────
-echo [Bonus] Setting up daily sync at 8:00 AM via Task Scheduler...
-schtasks /create /tn "ISD Dashboard Daily Sync" ^
-  /tr "python \"C:\Users\ax09\OneDrive - CDC\ISD project dashbaord\Publication dash\sync_to_github.py\"" ^
-  /sc DAILY /st 08:00 /f >nul 2>&1
-if %errorlevel% neq 0 (
-    echo       Could not create task — you may need to run as Administrator.
-    echo       To retry: right-click setup.bat and choose "Run as administrator"
-) else (
-    echo       Daily sync scheduled for 8:00 AM every day.
-)
-echo.
-
-echo ============================================================
-echo   ALL DONE!
-echo.
-echo   Your dashboard is live at:
-echo   https://YOUR_USERNAME.github.io/isd-publications-dashboard/
-echo.
-echo   Data syncs automatically every morning at 8:00 AM.
-echo   To sync manually anytime:  python sync_to_github.py
-echo ============================================================
-echo.
-pause
+Write-Host ""
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "  ALL DONE!" -ForegroundColor Green
+Write-Host ""
+Write-Host "  Dashboard: https://YOUR_USERNAME.github.io/isd-publications-dashboard/"
+Write-Host "  Auto-syncs daily at 8:00 AM"
+Write-Host "  Manual sync anytime: python sync_to_github.py"
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host ""
+Read-Host "Press Enter to close"
