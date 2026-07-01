@@ -1,0 +1,369 @@
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+
+st.set_page_config(
+    page_title="ISD Publications Dashboard",
+    page_icon="📄",
+    layout="wide"
+)
+
+# ── CDC color palette ─────────────────────────────────────────────────────────
+CDC = {
+    "blue":        "#005EA2",
+    "dark_blue":   "#1A4480",
+    "light_blue":  "#73B3E7",
+    "cyan":        "#00BDE3",
+    "teal":        "#009EC1",
+    "green":       "#538200",
+    "light_green": "#70E17B",
+    "gold":        "#C2850C",
+    "orange":      "#E66B1F",
+    "red":         "#D54309",
+    "magenta":     "#711E6C",
+    "gray":        "#565C65",
+    "light_gray":  "#DFE1E2",
+}
+
+STATUS_COLORS = {
+    "Published": CDC["blue"],
+    "Submitted": CDC["gold"],
+    "Accepted":  CDC["green"],
+    "Unknown":   CDC["gray"],
+}
+
+BRANCH_PALETTE = [
+    CDC["blue"], CDC["teal"], CDC["orange"], CDC["green"],
+    CDC["magenta"], CDC["gold"], CDC["cyan"], CDC["red"], CDC["dark_blue"]
+]
+
+CHART_LAYOUT = dict(
+    font_family="Public Sans, Arial, sans-serif",
+    plot_bgcolor="#FFFFFF",
+    paper_bgcolor="#FFFFFF",
+    margin=dict(t=30, b=30, l=10, r=10),
+)
+
+AXIS_X = dict(showgrid=True,  gridcolor=CDC["light_gray"], linecolor=CDC["gray"], linewidth=1.5, mirror=True)
+AXIS_Y = dict(showgrid=False, linecolor=CDC["gray"], linewidth=1.5, mirror=True)
+AXIS_X_NOGRIDS = dict(showgrid=False, linecolor=CDC["gray"], linewidth=1.5, mirror=True)
+AXIS_Y_GRIDS   = dict(showgrid=True,  gridcolor=CDC["light_gray"], linecolor=CDC["gray"], linewidth=1.5, mirror=True)
+
+st.markdown("""
+<style>
+[data-testid="stMetricValue"] { font-size: 2rem; font-weight: 700; color: #005EA2; }
+[data-testid="stMetricLabel"] { font-size: 0.78rem; color: #565C65; }
+[data-testid="stMetricDelta"] { font-size: 0.78rem; }
+div[data-testid="metric-container"] {
+    background: #F0F4F9;
+    border: 1px solid #DFE1E2;
+    border-radius: 8px;
+    padding: 14px 18px;
+}
+.section-divider { border-top: 2px solid #005EA2; margin: 1.2rem 0 0.8rem; }
+</style>
+""", unsafe_allow_html=True)
+
+# ── column name constants ─────────────────────────────────────────────────────
+STATUS_COL = "Status (submitted, accepted, published)"
+YEAR_COL   = "Year"
+TYPE_COL   = "Type"
+BRANCH_COL = "Branch"
+HANDS_COL  = "Announced at All Hands"
+
+def normalize_status(s):
+    s = str(s).strip().lower()
+    if s == "published": return "Published"
+    if s == "submitted": return "Submitted"
+    if s == "accepted":  return "Accepted"
+    if s in ("", "nan", "none"): return "Unknown"
+    return "Unknown"
+
+def normalize_announced(s):
+    s = str(s).strip().lower()
+    if s.startswith("yes"): return "Yes"
+    if s == "no":            return "No"
+    return "Not yet"
+
+def load_data(xf):  # xf = file path string or uploaded file object
+    try:
+        df = pd.read_excel(xf, sheet_name="All branches")
+        if BRANCH_COL not in df.columns:
+            raise ValueError
+        df = df[df.apply(lambda r: r.astype(str).str.strip().ne("").any(), axis=1)]
+        return df
+    except Exception:
+        sheets = pd.read_excel(xf, sheet_name=None)
+        frames = []
+        for name, sheet in sheets.items():
+            if name in ("All branches", "PB"): continue
+            if STATUS_COL in sheet.columns:
+                sheet = sheet[sheet.apply(lambda r: r.astype(str).str.strip().ne("").any(), axis=1)].copy()
+                sheet[BRANCH_COL] = name
+                frames.append(sheet)
+        return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+def clean(df):
+    df = df.copy()
+    if STATUS_COL in df.columns:
+        df[STATUS_COL] = df[STATUS_COL].apply(normalize_status)
+    if YEAR_COL in df.columns:
+        df[YEAR_COL] = pd.to_numeric(df[YEAR_COL], errors="coerce")
+    if HANDS_COL in df.columns:
+        df[HANDS_COL] = df[HANDS_COL].apply(normalize_announced)
+    if TYPE_COL in df.columns:
+        df[TYPE_COL] = df[TYPE_COL].astype(str).str.strip().replace({"": "Unknown", "nan": "Unknown"})
+        # Merge MMWR variants
+        df[TYPE_COL] = df[TYPE_COL].replace({"Weekly": "MMWR", "MMWR Morb Mortal Wkly Rep": "MMWR"})
+    return df
+
+def base_layout(height=320, **extra):
+    return dict(**CHART_LAYOUT, height=height, **extra)
+
+# ── file path — paste your exact path here ───────────────────────────────────
+import os
+
+# STEP: right-click the Excel file in File Explorer → "Copy as path" → paste below
+FILE_PATH = r""   # e.g. r"C:\Users\ax09\OneDrive - CDC\MyFolder\ISD Publications tracking_format updated 3-17-2025.xlsx"
+
+# ── sidebar ───────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("### 📄 ISD Publications")
+    st.markdown("---")
+    if st.button("🔄 Refresh data"):
+        st.cache_data.clear()
+        st.rerun()
+    st.markdown("---")
+
+# ── load ──────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=300)
+def load_and_clean(path):
+    raw = load_data(path)
+    return clean(raw)
+
+df = None
+
+# Try hardcoded path first
+if FILE_PATH and os.path.exists(FILE_PATH):
+    with st.spinner("Loading from OneDrive…"):
+        try:
+            df = load_and_clean(FILE_PATH)
+            st.sidebar.caption(f"📂 Auto-loaded · {os.path.basename(FILE_PATH)}")
+        except Exception as e:
+            st.sidebar.error(f"Read error: {e}")
+
+# Fallback: manual upload
+if df is None:
+    with st.sidebar:
+        st.warning("Set FILE_PATH in the script for auto-load, or upload manually below.")
+        uploaded = st.file_uploader("Upload Excel tracker", type=["xlsx", "xls"])
+    if uploaded:
+        with st.spinner("Reading uploaded file…"):
+            try:
+                df = load_and_clean(uploaded)
+            except Exception as e:
+                st.error(f"Could not read file: {e}")
+                st.stop()
+    else:
+        st.markdown("## 📄 ISD Publications Dashboard")
+        st.info(
+            "**To auto-load:** open `isd_dashboard.py`, find `FILE_PATH = r\"\"` near the top, "
+            "and paste your full file path inside the quotes.\n\n"
+            "**Quick start:** upload the file using the sidebar uploader above.",
+            icon="📂"
+        )
+        st.stop()
+
+if df is None or df.empty:
+    st.warning("No data found.")
+    st.stop()
+
+# ── sidebar filters ───────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("### Filters")
+
+    branches = ["All"] + sorted(df[BRANCH_COL].dropna().unique().tolist()) if BRANCH_COL in df.columns else ["All"]
+    sel_branch = st.selectbox("Branch", branches)
+
+    statuses = ["All", "Published", "Submitted", "Accepted", "Unknown"]
+    sel_status = st.selectbox("Status", statuses)
+
+    years = sorted(df[YEAR_COL].dropna().astype(int).unique().tolist()) if YEAR_COL in df.columns else []
+    if years:
+        yr_range = st.slider("Year range", min(years), max(years), (min(years), max(years)))
+    else:
+        yr_range = None
+
+    types = ["All"] + sorted(df[TYPE_COL].dropna().unique().tolist()) if TYPE_COL in df.columns else ["All"]
+    sel_type = st.multiselect("Publication type", options=types[1:], default=[])
+
+# ── apply filters ─────────────────────────────────────────────────────────────
+fdf = df.copy()
+if sel_branch != "All" and BRANCH_COL in fdf.columns:
+    fdf = fdf[fdf[BRANCH_COL] == sel_branch]
+if sel_status != "All" and STATUS_COL in fdf.columns:
+    fdf = fdf[fdf[STATUS_COL] == sel_status]
+if yr_range and YEAR_COL in fdf.columns:
+    fdf = fdf[fdf[YEAR_COL].between(*yr_range)]
+if sel_type and TYPE_COL in fdf.columns:
+    fdf = fdf[fdf[TYPE_COL].isin(sel_type)]
+
+# ── header ────────────────────────────────────────────────────────────────────
+st.markdown("## 📄 ISD Publications Monitoring Dashboard")
+if sel_branch != "All" or sel_status != "All" or sel_type:
+    active = []
+    if sel_branch != "All": active.append(f"Branch: **{sel_branch}**")
+    if sel_status != "All": active.append(f"Status: **{sel_status}**")
+    if sel_type: active.append(f"Type: **{', '.join(sel_type)}**")
+    st.caption("Filters active — " + " · ".join(active))
+
+# ── KPIs ──────────────────────────────────────────────────────────────────────
+total     = len(fdf)
+published = int((fdf[STATUS_COL] == "Published").sum()) if STATUS_COL in fdf.columns else 0
+submitted = int((fdf[STATUS_COL] == "Submitted").sum()) if STATUS_COL in fdf.columns else 0
+accepted  = int((fdf[STATUS_COL] == "Accepted").sum())  if STATUS_COL in fdf.columns else 0
+announced = int((fdf[HANDS_COL]  == "Yes").sum())       if HANDS_COL in fdf.columns else 0
+pct_pub   = f"{round(published / total * 100, 1)}%" if total else "—"
+
+k1, k2, k3, k4, k5 = st.columns(5)
+k1.metric("Total", total)
+k2.metric("Published", published, pct_pub)
+k3.metric("Submitted", submitted)
+k4.metric("Accepted", accepted)
+k5.metric("Announced", announced)
+
+st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+
+# ── row 1: status donut + year bar ────────────────────────────────────────────
+c1, c2 = st.columns(2)
+
+with c1:
+    st.markdown("**Status breakdown**")
+    if STATUS_COL in fdf.columns:
+        sc = fdf[STATUS_COL].value_counts().reset_index()
+        sc.columns = ["Status", "Count"]
+        fig = px.pie(
+            sc, names="Status", values="Count",
+            color="Status", color_discrete_map=STATUS_COLORS,
+            hole=0.58
+        )
+        fig.update_traces(
+            textinfo="label+percent",
+            hovertemplate="<b>%{label}</b><br>Count: %{value}<br>Share: %{percent}<extra></extra>",
+            marker=dict(line=dict(color="#FFFFFF", width=2))
+        )
+        fig.update_layout(
+            font_family="Public Sans, Arial, sans-serif",
+            paper_bgcolor="#FFFFFF",
+            margin=dict(t=20, b=20, l=10, r=10),
+            height=320,
+            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+with c2:
+    st.markdown("**Publications by year**")
+    if YEAR_COL in fdf.columns and STATUS_COL in fdf.columns:
+        ydf = fdf.dropna(subset=[YEAR_COL]).copy()
+        ydf[YEAR_COL] = ydf[YEAR_COL].astype(int).astype(str)
+        yg = ydf.groupby([YEAR_COL, STATUS_COL]).size().reset_index(name="Count")
+        fig2 = px.bar(
+            yg, x=YEAR_COL, y="Count", color=STATUS_COL,
+            color_discrete_map=STATUS_COLORS, barmode="stack",
+            labels={YEAR_COL: "Year", "Count": "Publications"},
+            custom_data=[STATUS_COL]
+        )
+        fig2.update_traces(hovertemplate="<b>%{x}</b><br>%{customdata[0]}: %{y}<extra></extra>")
+        fig2.update_layout(**base_layout(),
+                           legend_title="Status",
+                           xaxis=dict(tickmode="linear", **AXIS_X_NOGRIDS),
+                           yaxis=AXIS_Y_GRIDS)
+        st.plotly_chart(fig2, use_container_width=True)
+
+st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+
+# ── row 2: branch bar + type bar ──────────────────────────────────────────────
+c3, c4 = st.columns(2)
+
+with c3:
+    st.markdown("**Publications by branch**")
+    if BRANCH_COL in fdf.columns and STATUS_COL in fdf.columns:
+        bg = fdf.groupby([BRANCH_COL, STATUS_COL]).size().reset_index(name="Count")
+        branch_order = bg.groupby(BRANCH_COL)["Count"].sum().sort_values(ascending=True).index.tolist()
+        fig3 = px.bar(
+            bg, x="Count", y=BRANCH_COL, color=STATUS_COL,
+            color_discrete_map=STATUS_COLORS, orientation="h",
+            category_orders={BRANCH_COL: branch_order},
+            labels={"Count": "Publications", BRANCH_COL: ""},
+        )
+        fig3.update_traces(hovertemplate="<b>%{y}</b><br>%{fullData.name}: %{x}<extra></extra>")
+        h = max(300, len(branch_order) * 42)
+        fig3.update_layout(**base_layout(height=h),
+                           legend_title="Status",
+                           xaxis=AXIS_X, yaxis=AXIS_Y)
+        st.plotly_chart(fig3, use_container_width=True)
+
+with c4:
+    st.markdown("**Publication type**")
+    if TYPE_COL in fdf.columns:
+        tc = fdf[TYPE_COL].replace({"Unknown": pd.NA}).dropna().value_counts().reset_index()
+        tc.columns = ["Type", "Count"]
+        fig4 = px.bar(
+            tc, x="Count", y="Type", orientation="h",
+            color="Type", color_discrete_sequence=BRANCH_PALETTE,
+            labels={"Count": "Publications", "Type": ""},
+        )
+        fig4.update_traces(hovertemplate="<b>%{y}</b><br>Count: %{x}<extra></extra>",
+                           showlegend=False)
+        h4 = max(300, len(tc) * 42)
+        fig4.update_layout(**base_layout(height=h4),
+                           xaxis=AXIS_X, yaxis=dict(categoryorder="total ascending", **AXIS_Y))
+        st.plotly_chart(fig4, use_container_width=True)
+
+st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+
+# ── top journals ──────────────────────────────────────────────────────────────
+st.markdown("**Top journals by publication count**")
+journal_col = next((c for c in df.columns if "journal" in c.lower()), None)
+
+if journal_col:
+    jc = fdf[journal_col].replace("", pd.NA).dropna().str.strip().value_counts().head(10).reset_index()
+    jc.columns = ["Journal", "Count"]
+    fig5 = px.bar(
+        jc, x="Count", y="Journal", orientation="h",
+        color_discrete_sequence=[CDC["blue"]],
+        labels={"Count": "Publications", "Journal": ""},
+    )
+    fig5.update_traces(hovertemplate="<b>%{y}</b><br>Count: %{x}<extra></extra>",
+                       marker_color=CDC["blue"])
+    fig5.update_layout(**base_layout(height=360),
+                       xaxis=AXIS_X, yaxis=dict(categoryorder="total ascending", **AXIS_Y))
+    st.plotly_chart(fig5, use_container_width=True)
+
+# ── announced trend ───────────────────────────────────────────────────────────
+st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+st.markdown("**Announced at All Hands — by year**")
+
+if HANDS_COL in fdf.columns and YEAR_COL in fdf.columns:
+    adf = fdf.dropna(subset=[YEAR_COL]).copy()
+    adf[YEAR_COL] = adf[YEAR_COL].astype(int).astype(str)
+    ag = adf.groupby([YEAR_COL, HANDS_COL]).size().reset_index(name="Count")
+    ann_colors = {"Yes": CDC["green"], "No": CDC["red"], "Not yet": CDC["gold"]}
+    fig6 = px.bar(ag, x=YEAR_COL, y="Count", color=HANDS_COL,
+                  color_discrete_map=ann_colors, barmode="stack",
+                  labels={YEAR_COL: "Year", "Count": "Publications", HANDS_COL: "Announced"})
+    fig6.update_traces(hovertemplate="<b>%{x}</b><br>%{fullData.name}: %{y}<extra></extra>")
+    fig6.update_layout(**base_layout(),
+                       legend_title="Announced",
+                       xaxis=dict(tickmode="linear", **AXIS_X_NOGRIDS),
+                       yaxis=AXIS_Y_GRIDS)
+    st.plotly_chart(fig6, use_container_width=True)
+
+# ── full data + download ──────────────────────────────────────────────────────
+st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+with st.expander("View full data table"):
+    st.dataframe(fdf.reset_index(drop=True), use_container_width=True)
+
+csv = fdf.to_csv(index=False).encode("utf-8")
+st.download_button("⬇️ Download filtered data as CSV", csv, "isd_publications_filtered.csv", "text/csv")
