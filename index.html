@@ -205,19 +205,30 @@ function showState(s){
 }
 
 // ── auto-fetch data.xlsx from same repo ───────────────────────────────────────
+const DATA_FILE = "./data.xlsx";
+
 async function loadFromRepo(){
   showState("loading");
-  document.getElementById("fileStatus").textContent="Fetching…";
+  document.getElementById("fileStatus").textContent = "Fetching data.xlsx...";
+
   try {
-    // fetch with cache-busting so updates are always picked up
-    const resp = await fetch("data.xlsx?_=" + Date.now());
-    if(!resp.ok) throw new Error("HTTP " + resp.status);
+    const resp = await fetch(DATA_FILE + "?v=" + Date.now(), {
+      method: "GET",
+      cache: "no-store"
+    });
+
+    if (!resp.ok) {
+      throw new Error("Could not fetch data.xlsx. HTTP status: " + resp.status);
+    }
+
     const buf = await resp.arrayBuffer();
-    processBuffer(buf, "data.xlsx (repo)");
+    processBuffer(buf, "data.xlsx from GitHub repo");
+
   } catch(e) {
     console.error(e);
-    document.getElementById("fileStatus").textContent="❌ Could not load data.xlsx";
-    document.getElementById("lastUpdated").textContent="Could not fetch data.xlsx — see instructions below";
+    document.getElementById("fileStatus").textContent = "Could not load data.xlsx";
+    document.getElementById("lastUpdated").textContent =
+      "Could not fetch data.xlsx from the GitHub repository.";
     showState("error");
   }
 }
