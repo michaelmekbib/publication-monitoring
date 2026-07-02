@@ -138,7 +138,7 @@ tr:hover td{background:#F8FBFF}
     <div class="state-box state-error">
       <p style="font-size:1.5rem;margin-bottom:.5rem">⚠️</p>
       <p style="font-weight:600">Could not load <code>data.xlsx</code> from the repository</p>
-      <p style="font-size:12px;margin-top:.4rem">Make sure <code>data.xlsx</code> exists in the root of your GitHub repo,
+      <p style="font-size:12px;margin-top:.4rem">Make sure <code>ISD Publications tracking_format updated 3172025.xlsx</code> exists in the root of your GitHub repo,
       then click <b>⬇ Re-fetch data</b> in the sidebar, or upload the file manually below.</p>
     </div>
     <!-- fallback manual upload -->
@@ -210,7 +210,7 @@ async function loadFromRepo(){
   document.getElementById("fileStatus").textContent="Fetching…";
   try {
     // fetch with cache-busting so updates are always picked up
-    const resp = await fetch("data.xlsx?_=" + Date.now());
+    const resp = await fetch("ISD Publications tracking_format updated 3172025.xlsx?_=" + Date.now());
     if(!resp.ok) throw new Error("HTTP " + resp.status);
     const buf = await resp.arrayBuffer();
     processBuffer(buf, "data.xlsx (repo)");
