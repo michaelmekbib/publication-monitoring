@@ -1,6 +1,6 @@
 # ISD Publications Dashboard
 
-A browser-based dashboard for exploring research publications by branch, status, type, author, and year.
+I designed and developed this browser-based dashboard to help teams explore research publications by branch, status, type, author, and year.
 
 **[Open dashboard](https://michaelmekbib.github.io/publication-monitoring/)** · **[Michael Sileshi Mekbib](https://michaelmekbib.github.io/portfolio/)**
 
@@ -49,11 +49,9 @@ Journal and author columns are detected by header names containing `journal` and
 | `data.csv` | Additional data file; not the current automatic loading source. |
 | `readme.txt`, `setup_cmd.txt` | Earlier setup notes; some refer to helper scripts not included in this repository. |
 
-Use this README for the current application behavior. Some existing on-screen loading text mentions CSV, but the current code requests `data.xlsx`.
-
 ## Update the data
 
-Replace `data.xlsx` with an authorized workbook using the same schema, commit the change, then reload the dashboard. Confirm that the workbook’s records are suitable for the repository’s visibility before publishing.
+Update `data.xlsx` using the same schema, commit the change, and reload the dashboard. Use publication records intended for public sharing.
 
 ## Technology
 
@@ -61,7 +59,7 @@ HTML, CSS, JavaScript, Chart.js 4.4.1, SheetJS 0.18.5, and GitHub Pages.
 
 ## Contribution
 
-Michael Sileshi Mekbib designed and developed the dashboard, information structure, interaction model, and publication-monitoring experience.
+I designed the information structure, interaction model, and publication-monitoring experience, and built the dashboard’s filtering, charts, and export functions.
 
 ## Contact
 
